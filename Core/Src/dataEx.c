@@ -5,6 +5,7 @@
 
 unsigned char esp32_calculate_crc(unsigned char *data, unsigned int length);
 void dataEx_Error_Handler(void);
+void buf2store();
 
 UART_HandleTypeDef *p_huart = NULL;
 uint8_t transmitter_State = TRANSMITTER_STATE_READY;
@@ -12,13 +13,14 @@ uint8_t transmitter_State = TRANSMITTER_STATE_READY;
 
 transmitt_Buf_t transmitt_Buf;
 receive_Buf_t   receive_Buf;
-receive_Buf_t   last_receive;
+receive_Buf_t   store;
+uint8_t resAccum;
 uint8_t *receive_seek;
 uint8_t *expect_end_seek;
-
-
-uint8_t size_last_receive = -1;
-
+uint8_t receive_permit = 0;
+uint8_t Is_storeFull = 0;
+uint16_t size_store = 0;
+uint16_t lengthValue, last_lengthValue;
 
 /* ****************************************************** */
 int8_t uart_handle_rigistr(UART_HandleTypeDef *_huart)
@@ -27,14 +29,14 @@ int8_t uart_handle_rigistr(UART_HandleTypeDef *_huart)
  if (_huart)
  {
    p_huart=_huart;
-   transmitt_Buf.sof = 0;
+   transmitt_Buf.sof = SOF_SIGN;
    //prepare to first receive 
    receive_seek = (uint8_t *)&receive_Buf;
    expect_end_seek = (uint8_t *)&receive_Buf + sizeof(receive_Buf_t);
    __HAL_UART_ENABLE_IT(p_huart, UART_IT_IDLE);
-   
+   receive_permit = 1;
    //permitt receiving
-   if(HAL_UART_Receive_IT(p_huart, receive_seek, 1) != HAL_OK)
+   if(HAL_UART_Receive_IT(p_huart, &resAccum, 1) != HAL_OK)
     dataEx_Error_Handler();
  }
  else
@@ -66,7 +68,7 @@ int8_t send_request(uint8_t cmd, uint8_t *data, uint16_t data_len)
       transmitter_State = TRANSMITTER_STATE_BUSY;
     }
     else
-      retval = STATUS_ERROR;  // very big payload;
+      retval = STATUS_ERROR;  // very big lengthValue;
   }
   else
       retval = STATUS_ERROR;  // transmitter busy;
@@ -84,43 +86,87 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
   transmitter_State = TRANSMITTER_STATE_READY;
 }
+
+
 /* ***************************************************
 
 *************************************************** */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  uint8_t accum;
-  uint16_t payload;
-  if(HAL_UART_Receive_IT(p_huart, &accum, 1) != HAL_OK)
+  //permit next byte receive in Accumulator
+  if(HAL_UART_Receive_IT(p_huart, &resAccum, 1) != HAL_OK)
     dataEx_Error_Handler();
-
-  //check owerflow receive buffer
-  if (receive_seek < (uint8_t *)&receive_Buf + sizeof(receive_Buf_t))
+  
+  if (receive_permit)
   {
-    *receive_seek = accum;
-    receive_seek++;
+    //check owerflow receive buffer
+    if (receive_seek < (uint8_t *)&receive_Buf + sizeof(receive_Buf_t))
+    {
+      *receive_seek = resAccum;
+      receive_seek++;
 
-    if (receive_seek == &receive_Buf.cmd)
-    {
-      //definite the end of transaction knowing lsb and msb
-      payload = receive_Buf.lsb + (receive_Buf.msb << 8);
-      expect_end_seek = receive_seek + payload;
+      if (receive_seek == &receive_Buf.cmd)
+      {
+        //definite the end of transaction knowing .lsb and .msb
+        lengthValue = receive_Buf.lsb + (receive_Buf.msb << 8);
+        if ((lengthValue < FIELD_LEN_MIN) || (lengthValue > FIELD_LEN_MAX))
+        {
+          receive_permit = 0; //packet can't be correct with such lengthValue !!
+          return;
+        }
+        expect_end_seek = receive_seek + lengthValue;
+      }
+       
+      if (receive_seek > expect_end_seek) //packet with length = lengthValue is received. 
+      {
+        if (!Is_storeFull)
+          buf2store();
+        else
+         receive_permit = 0; 
+      }
     }
-     
-    if (receive_seek > expect_end_seek) //maybe packet received. 
-    {
-      size_last_receive = receive_seek - (uint8_t *)&receive_Buf;
-      memcpy(&last_receive, &receive_Buf, size_last_receive);
-      
-      //prepare to next receive 
-     receive_seek = (uint8_t *)&receive_Buf;
-     expect_end_seek = (uint8_t *)&receive_Buf + sizeof(receive_Buf_t);
-    }
+     else 
+       receive_permit = 0;  //denay overflow allocated structure
   }
 } 
 
+        
 
- // if (accum == esp32_calculate_crc(&receive_Buf.cmd, payload-1))
+void buf2store()
+{
+  last_lengthValue = lengthValue;
+  size_store = receive_seek - (uint8_t *)&receive_Buf;
+  memcpy(&store, &receive_Buf, size_store);
+  Is_storeFull = 1;
+  
+  //prepare to next receive 
+  receive_seek = (uint8_t *)&receive_Buf;
+  expect_end_seek = (uint8_t *)&receive_Buf + sizeof(receive_Buf_t);
+}
+
+
+/* ***************************************************
+ Answer validation and put data to pointer buf
+*************************************************** */
+int8_t process_answer (unsigned char *buf)
+{
+  uint8_t retval = -1;
+  if (Is_storeFull)
+  {
+    if ((uint8_t) *((uint8_t *)&store + size_store) == esp32_calculate_crc(&store.cmd, last_lengthValue-1))
+    {
+     memcpy(buf, &store, size_store);
+     retval = 0;
+    }
+      
+    Is_storeFull = 0;
+    if (! receive_permit)
+      buf2store();
+  }
+  return (retval);
+}
+
+
 void Idle_detect_callback()
 {
   
