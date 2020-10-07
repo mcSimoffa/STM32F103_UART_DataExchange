@@ -8,25 +8,38 @@ void dataEx_Error_Handler(void);
 
 UART_HandleTypeDef *p_huart = NULL;
 uint8_t transmitter_State = TRANSMITTER_STATE_READY;
-typedef struct
-{
-  uint8_t sof;
-  uint8_t msb;
-  uint8_t lsb;
-  uint8_t cmd;
-  uint8_t data[PAYLOAD_LEN+CRC_SIZE];  //data and crc
-} transmitt_Buf_t;
+
 
 transmitt_Buf_t transmitt_Buf;
+receive_Buf_t   receive_Buf;
+receive_Buf_t   last_receive;
+uint8_t *receive_seek;
+uint8_t *expect_end_seek;
+
+
+uint8_t size_last_receive = -1;
+
+
 /* ****************************************************** */
 int8_t uart_handle_rigistr(UART_HandleTypeDef *_huart)
 {
-  int8_t retval = STATUS_OK;
+ int8_t retval = STATUS_OK;
  if (_huart)
+ {
    p_huart=_huart;
+   transmitt_Buf.sof = 0;
+   //prepare to first receive 
+   receive_seek = (uint8_t *)&receive_Buf;
+   expect_end_seek = (uint8_t *)&receive_Buf + sizeof(receive_Buf_t);
+   __HAL_UART_ENABLE_IT(p_huart, UART_IT_IDLE);
+   
+   //permitt receiving
+   if(HAL_UART_Receive_IT(p_huart, receive_seek, 1) != HAL_OK)
+    dataEx_Error_Handler();
+ }
  else
   retval = STATUS_ERROR;
- transmitt_Buf.sof = 0;
+ 
  return (retval);
 }
 
@@ -61,40 +74,59 @@ int8_t send_request(uint8_t cmd, uint8_t *data, uint16_t data_len)
   return (retval);
 }
 
-/* ****************************************************** 
-if(HAL_UART_Receive_IT(p_huart, inBox, 1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  transmitterReady = 1; */
-
- 
- 
- 
  /**
   * @brief  Tx Transfer completed callback
   * @param  UartHandle: UART handle. 
-  * @note   This example shows a simple way to report end of DMA Tx transfer, and 
-  *         you can add your own implementation. 
+  * @note   this routine instead weak stm32f1xx_hal_uart
   * @retval None
   */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
   transmitter_State = TRANSMITTER_STATE_READY;
 }
+/* ***************************************************
 
-/*void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+*************************************************** */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  asm("nop");
-  uint8_t a=huart->RxState;
-  a++;
-  if(HAL_UART_Receive_IT(huart, inBox, 1) != HAL_OK)
+  uint8_t accum;
+  uint16_t payload;
+  if(HAL_UART_Receive_IT(p_huart, &accum, 1) != HAL_OK)
+    dataEx_Error_Handler();
+
+  //check owerflow receive buffer
+  if (receive_seek < (uint8_t *)&receive_Buf + sizeof(receive_Buf_t))
   {
-    Error_Handler();
+    *receive_seek = accum;
+    receive_seek++;
+
+    if (receive_seek == &receive_Buf.cmd)
+    {
+      //definite the end of transaction knowing lsb and msb
+      payload = receive_Buf.lsb + (receive_Buf.msb << 8);
+      expect_end_seek = receive_seek + payload;
+    }
+     
+    if (receive_seek > expect_end_seek) //maybe packet received. 
+    {
+      size_last_receive = receive_seek - (uint8_t *)&receive_Buf;
+      memcpy(&last_receive, &receive_Buf, size_last_receive);
+      
+      //prepare to next receive 
+     receive_seek = (uint8_t *)&receive_Buf;
+     expect_end_seek = (uint8_t *)&receive_Buf + sizeof(receive_Buf_t);
+    }
   }
+} 
+
+
+ // if (accum == esp32_calculate_crc(&receive_Buf.cmd, payload-1))
+void Idle_detect_callback()
+{
   
-} */
+  asm("nop");
+}
+
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
