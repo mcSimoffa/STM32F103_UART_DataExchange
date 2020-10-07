@@ -9,7 +9,7 @@ void buf2store();
 
 UART_HandleTypeDef *p_huart = NULL;
 uint8_t transmitter_State = TRANSMITTER_STATE_READY;
-
+uint8_t Rx_State = RX_STATE_DENY;
 
 transmitt_Buf_t transmitt_Buf;
 receive_Buf_t   receive_Buf;
@@ -33,18 +33,138 @@ int8_t uart_handle_rigistr(UART_HandleTypeDef *_huart)
    //prepare to first receive 
    receive_seek = (uint8_t *)&receive_Buf;
    expect_end_seek = (uint8_t *)&receive_Buf + sizeof(receive_Buf_t);
+   Rx_State = RX_STATE_BEGIN;
    __HAL_UART_ENABLE_IT(p_huart, UART_IT_IDLE);
-   receive_permit = 1;
-   //permitt receiving
    if(HAL_UART_Receive_IT(p_huart, &resAccum, 1) != HAL_OK)
     dataEx_Error_Handler();
  }
  else
   retval = STATUS_ERROR;
- 
  return (retval);
 }
 
+/* ***************************************************
+
+*************************************************** */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  //permit next byte receive in Accumulator
+  if(HAL_UART_Receive_IT(p_huart, &resAccum, 1) != HAL_OK)
+    dataEx_Error_Handler();
+  
+  switch (Rx_State) //state machine 
+  {
+  case  RX_STATE_DENY:
+    break;
+  case  RX_STATE_BEGIN:
+    *receive_seek = resAccum;
+    if (receive_seek == &receive_Buf.sof)
+      if (resAccum != SOF_SIGN)
+      {
+        Rx_State = RX_STATE_DENY;
+        break;
+      }
+     receive_seek++;
+     if (receive_seek == &receive_Buf.cmd)
+     {
+       lengthValue = receive_Buf.lsb + (receive_Buf.msb << 8);
+       if ((lengthValue < FIELD_LEN_MIN) || (lengthValue > FIELD_LEN_MAX))
+         Rx_State = RX_STATE_DENY;
+       else
+       {
+        expect_end_seek = receive_seek + lengthValue;
+        Rx_State = RX_STATE_HAVE_LEN;
+       }
+     }
+    break;
+    
+  case  RX_STATE_HAVE_LEN:
+    *receive_seek = resAccum;
+     receive_seek++;
+    if (receive_seek >= expect_end_seek)
+      Rx_State = RX_STATE_HAVE_PACKET; //fall-through
+    else
+      break;    
+    
+  case  RX_STATE_HAVE_PACKET:
+    if (!Is_storeFull)
+    {
+      buf2store();
+      Is_storeFull = 1;
+      Rx_State = RX_STATE_BEGIN;
+    }
+    break;
+    
+  default:
+    Rx_State = RX_STATE_BEGIN;
+  }
+}
+ /* if (receive_permit)
+  {
+    //check owerflow receive buffer
+    if (receive_seek < (uint8_t *)&receive_Buf + sizeof(receive_Buf_t))
+    {
+      *receive_seek = resAccum;
+      receive_seek++;
+
+      if (receive_seek == &receive_Buf.cmd)
+      {
+        //definite the end of transaction knowing .lsb and .msb
+        lengthValue = receive_Buf.lsb + (receive_Buf.msb << 8);
+        if ((lengthValue < FIELD_LEN_MIN) || (lengthValue > FIELD_LEN_MAX))
+        {
+          receive_permit = 0; //packet can't be correct with such lengthValue !!
+          return;
+        }
+        expect_end_seek = receive_seek + lengthValue;
+      }
+       
+      if (receive_seek > expect_end_seek) //packet with length = lengthValue is received. 
+      {
+        if (!Is_storeFull)
+          buf2store();
+        else
+         receive_permit = 0; 
+      }
+    }
+     else 
+       receive_permit = 0;  //denay overflow allocated structure
+  }
+} */
+
+void buf2store()
+{
+  last_lengthValue = lengthValue;
+  size_store = receive_seek - (uint8_t *)&receive_Buf;
+  memcpy(&store, &receive_Buf, size_store);
+   
+  //prepare to next receive 
+  receive_seek = (uint8_t *)&receive_Buf;
+  expect_end_seek = (uint8_t *)&receive_Buf + sizeof(receive_Buf_t);
+}
+
+/* ***************************************************
+ Answer validation and put data to pointer buf
+*************************************************** */
+int8_t process_answer (unsigned char *buf)
+{
+  uint8_t retval = -1;
+  if (Is_storeFull)
+  {
+    if ((uint8_t) *((uint8_t *)&store + size_store) == esp32_calculate_crc(&store.cmd, last_lengthValue-1))
+    {
+     memcpy(buf, &store, size_store);
+     retval = 0;
+    }
+
+    if (Rx_State == RX_STATE_HAVE_PACKET)
+      buf2store();
+    Rx_State = RX_STATE_DENY;
+    Is_storeFull = 0;
+    Rx_State = RX_STATE_BEGIN;
+  }
+  return (retval);
+}
 
 /* ****************************************************** */
 int8_t send_request(uint8_t cmd, uint8_t *data, uint16_t data_len)
@@ -87,90 +207,14 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
   transmitter_State = TRANSMITTER_STATE_READY;
 }
 
-
-/* ***************************************************
-
-*************************************************** */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-  //permit next byte receive in Accumulator
-  if(HAL_UART_Receive_IT(p_huart, &resAccum, 1) != HAL_OK)
-    dataEx_Error_Handler();
-  
-  if (receive_permit)
-  {
-    //check owerflow receive buffer
-    if (receive_seek < (uint8_t *)&receive_Buf + sizeof(receive_Buf_t))
-    {
-      *receive_seek = resAccum;
-      receive_seek++;
-
-      if (receive_seek == &receive_Buf.cmd)
-      {
-        //definite the end of transaction knowing .lsb and .msb
-        lengthValue = receive_Buf.lsb + (receive_Buf.msb << 8);
-        if ((lengthValue < FIELD_LEN_MIN) || (lengthValue > FIELD_LEN_MAX))
-        {
-          receive_permit = 0; //packet can't be correct with such lengthValue !!
-          return;
-        }
-        expect_end_seek = receive_seek + lengthValue;
-      }
-       
-      if (receive_seek > expect_end_seek) //packet with length = lengthValue is received. 
-      {
-        if (!Is_storeFull)
-          buf2store();
-        else
-         receive_permit = 0; 
-      }
-    }
-     else 
-       receive_permit = 0;  //denay overflow allocated structure
-  }
-} 
-
-        
-
-void buf2store()
-{
-  last_lengthValue = lengthValue;
-  size_store = receive_seek - (uint8_t *)&receive_Buf;
-  memcpy(&store, &receive_Buf, size_store);
-  Is_storeFull = 1;
-  
-  //prepare to next receive 
-  receive_seek = (uint8_t *)&receive_Buf;
-  expect_end_seek = (uint8_t *)&receive_Buf + sizeof(receive_Buf_t);
-}
-
-
-/* ***************************************************
- Answer validation and put data to pointer buf
-*************************************************** */
-int8_t process_answer (unsigned char *buf)
-{
-  uint8_t retval = -1;
-  if (Is_storeFull)
-  {
-    if ((uint8_t) *((uint8_t *)&store + size_store) == esp32_calculate_crc(&store.cmd, last_lengthValue-1))
-    {
-     memcpy(buf, &store, size_store);
-     retval = 0;
-    }
-      
-    Is_storeFull = 0;
-    if (! receive_permit)
-      buf2store();
-  }
-  return (retval);
-}
-
-
 void Idle_detect_callback()
 {
-  
-  asm("nop");
+ if (Rx_State != RX_STATE_HAVE_PACKET)
+ {
+    receive_seek = (uint8_t *)&receive_Buf;
+    expect_end_seek = (uint8_t *)&receive_Buf + sizeof(receive_Buf_t);
+    Rx_State = RX_STATE_BEGIN;
+ } 
 }
 
 

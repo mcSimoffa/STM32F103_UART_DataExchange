@@ -13,6 +13,10 @@
 #define TRANSMITTER_STATE_READY   0
 #define TRANSMITTER_STATE_BUSY    1
 
+#define RX_STATE_DENY             0
+#define RX_STATE_BEGIN            1
+#define RX_STATE_HAVE_LEN         2
+#define RX_STATE_HAVE_PACKET      3
 
 typedef struct
 {

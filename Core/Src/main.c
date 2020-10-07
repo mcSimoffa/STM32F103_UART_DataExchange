@@ -96,15 +96,11 @@ int main(void)
   
   if (uart_handle_rigistr(&huart1) != STATUS_OK)
     Error_Handler();
-  uint8_t cnt=0;
-  do
-  {
+ 
    if (send_request(31, toTxBuf, sizeof(toTxBuf)-1) != STATUS_OK)
-   {
      Error_Handler();
-   }
-   cnt++; 
-  } while(1);
+
+
   
   
   
