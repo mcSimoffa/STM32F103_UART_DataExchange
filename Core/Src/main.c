@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "dataEx.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,9 +44,8 @@ UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_tx;
 
 /* USER CODE BEGIN PV */
-const static uint8_t toTxBuf[]="Hello World\r\n";
-volatile uint8_t transmitterReady = 0;
-uint8_t inBox[11];
+static uint8_t toTxBuf[]="Hello World";
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -94,18 +93,23 @@ int main(void)
   MX_DMA_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  if(HAL_UART_Receive_IT(&huart1, inBox, 1) != HAL_OK)
-  {
+  
+  if (uart_handle_rigistr(&huart1) != STATUS_OK)
     Error_Handler();
-  }
-
-  transmitterReady = 1;
- if(HAL_UART_Transmit_DMA(&huart1, (uint8_t *)toTxBuf, sizeof(toTxBuf)-1) != HAL_OK)
+  uint8_t cnt=0;
+  do
   {
-    Error_Handler();
-  }
- transmitterReady = 0;
- 
+   if (send_request(31, toTxBuf, sizeof(toTxBuf)-1) != STATUS_OK)
+   {
+     Error_Handler();
+   }
+   cnt++; 
+  } while(1);
+  
+  
+  
+  
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -234,40 +238,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-/**
-  * @brief  Tx Transfer completed callback
-  * @param  UartHandle: UART handle. 
-  * @note   This example shows a simple way to report end of DMA Tx transfer, and 
-  *         you can add your own implementation. 
-  * @retval None
-  */
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
-{
-  /* Set transmission flag: trasfer complete*/
-  asm("nop");
-  transmitterReady = 1;
-  uint8_t a=UartHandle->ErrorCode;
 
-  
-}
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-  asm("nop");
-  uint8_t a=huart->RxState;
-  a++;
-  if(HAL_UART_Receive_IT(&huart1, inBox, 1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  
-}
-
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
-{
-  uint8_t a= huart->ErrorCode;
-  
-}
 
 /* USER CODE END 4 */
 
@@ -278,7 +249,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
+  while(1)
+    asm("nop");
 
   /* USER CODE END Error_Handler_Debug */
 }
@@ -294,6 +266,8 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
+  while(1)
+    asm("nop");
   /* User can add his own implementation to report the file name and line number,
      tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
