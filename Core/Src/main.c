@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "dataEx.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -40,12 +41,13 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-UART_HandleTypeDef huart1;
-DMA_HandleTypeDef hdma_usart1_tx;
+
 
 /* USER CODE BEGIN PV */
-static uint8_t toTxBuf[]="Hello World";
-
+UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_tx;
+static uint8_t toTxBuf[]="Please send me a packet, then I pack it as DATA and return it back\r\n";
+unsigned char inBox[sizeof(receive_Buf_t)];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -94,24 +96,46 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   
-  if (uart_handle_rigistr(&huart1) != STATUS_OK)
+  printf("Let start\r\n");
+  HAL_GPIO_WritePin(ONBOARD_LED_GPIO_Port, ONBOARD_LED_Pin, GPIO_PIN_SET);
+  
+  if (uart_handle_registr(&huart1) != STATUS_OK)
     Error_Handler();
- 
-   if (send_request(31, toTxBuf, sizeof(toTxBuf)-1) != STATUS_OK)
+  // ----------------- test begin ------------------
+  // send prompt 
+   if (send_request(CMD_EXAMPLE, toTxBuf, sizeof(toTxBuf)-1) != STATUS_OK)
      Error_Handler();
-
-
-  
-  
-  
-  
-  
+   
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+     int16_t msglen=0;
+     if ((msglen = polling())>0)  //check incoming
+     {
+       printf("_message %d bytes\r\n",msglen);
+       if (process_answer (inBox) == STATUS_OK)
+       {
+         //displaying
+        for (uint16_t i=0; i<msglen; i++)
+          printf("0x%X ",*(inBox + i));
+        
+        HAL_Delay(300); //immitate delay
+        
+        HAL_GPIO_WritePin(ONBOARD_LED_GPIO_Port, ONBOARD_LED_Pin, GPIO_PIN_SET);  //LED error indicate OFF
+        
+        //Repacking inBox as new outgong packet and send back
+        while (send_request(31, inBox, msglen) != STATUS_OK)
+          asm("nop"); //try send
+       }//  STATUS_OK
+        else
+        {
+          printf("CRC wrong\r\n");
+          HAL_GPIO_WritePin(ONBOARD_LED_GPIO_Port, ONBOARD_LED_Pin, GPIO_PIN_RESET);  //LED error indicate ON
+        }
+     } //polling()>0 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -245,6 +269,7 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
+  printf("_Caught in HAL error handler\r\n");
   while(1)
     asm("nop");
 

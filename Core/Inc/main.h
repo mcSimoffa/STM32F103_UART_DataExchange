@@ -47,7 +47,7 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-
+#define CMD_EXAMPLE   0x21
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

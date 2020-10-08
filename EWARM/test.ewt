@@ -1444,6 +1444,9 @@
                 <file>
                     <name>$PROJ_DIR$\..\Core\Src\stm32f1xx_it.c</name>
                 </file>
+                <file>
+                    <name>$PROJ_DIR$\..\Core\Src\swo.c</name>
+                </file>
             </group>
         </group>
     </group>
