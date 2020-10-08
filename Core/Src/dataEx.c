@@ -10,17 +10,17 @@ void buf2store();
 
 UART_HandleTypeDef *p_huart = NULL;
 uint8_t transmitter_State = TRANSMITTER_STATE_READY;
-uint8_t Rx_State = RX_STATE_DENY;
+volatile uint8_t Rx_State = RX_STATE_DENY;
 
 transmitt_Buf_t transmitt_Buf;
 receive_Buf_t   receive_Buf;
 receive_Buf_t   store;
 uint8_t resAccum;
-uint8_t *receive_seek;
-uint8_t *expect_end_seek;
-uint8_t Is_storeFull = 0;
+volatile uint8_t *receive_seek;
+volatile uint8_t *expect_end_seek;
+volatile uint8_t storeIsFull = 0;
 uint16_t size_store = 0;
-uint16_t lengthValue; // CMD + STATUS + DATA[] + CRC. incoming length
+volatile uint16_t lengthValue; // CMD + STATUS + DATA[] + CRC. incoming length
 uint16_t last_lengthValue;
 
 /* ***************************************************
@@ -72,7 +72,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   switch (Rx_State) //state machine 
   {
   case  RX_STATE_DENY:
-    printf(" $Deny$ ");
+    printf("\r\n$Deny$");
     break;
     
   case  RX_STATE_BEGIN:
@@ -84,13 +84,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         break;
       }
      receive_seek++;
+    
      if (receive_seek == &receive_Buf.cmd)
      {
        lengthValue = receive_Buf.lsb + (receive_Buf.msb << 8);
        if ((lengthValue < FIELD_LEN_MIN) || (lengthValue > FIELD_LEN_MAX))
        {
          Rx_State = RX_STATE_DENY;
-         printf(" $Wrong Len$ ");
+         printf("\r\n$Wrong Len$ ");
        } 
        else
        {
@@ -109,15 +110,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
       break;    
     
   case  RX_STATE_HAVE_PACKET:
-    if (!Is_storeFull)
+    if (!storeIsFull)
     {
       buf2store();
-      Is_storeFull = 1;
+      storeIsFull = 1;
       Rx_State = RX_STATE_BEGIN;
     }
     else
     {
-     printf(" $Storefull$ "); 
+     printf("\r\n$Storefull$"); 
     }
     break;
     
@@ -151,7 +152,7 @@ just it is some packet.
 *************************************************** */
  int16_t polling(void)
  {
-   return((Is_storeFull) ? size_store : -1);
+   return((storeIsFull) ? size_store : -1);
  }
 
 /* ***************************************************
@@ -163,7 +164,7 @@ return  STATUS_OK if CRC correct
 int8_t process_answer (unsigned char *buf)
 {
   uint8_t retval = STATUS_ERROR;
-  if (Is_storeFull)
+  if (storeIsFull)
   {
     if ((uint8_t) *((uint8_t *)&store + size_store-1) == esp32_calculate_crc(&store.cmd, last_lengthValue-1))
     {
@@ -173,10 +174,12 @@ int8_t process_answer (unsigned char *buf)
     }
 
     if (Rx_State == RX_STATE_HAVE_PACKET)
+    {
       buf2store();
-    Rx_State = RX_STATE_DENY;
-    Is_storeFull = 0;
-    Rx_State = RX_STATE_BEGIN;
+      Rx_State = RX_STATE_BEGIN;
+    }
+    else
+     storeIsFull = 0; 
   }
   return (retval);
 }
@@ -302,7 +305,5 @@ dataEx Error handler
 ********************************************************* */
 void dataEx_Error_Handler(void)
 {
-  printf(" $Caught in an error handler in dataEx_Error_Handler$ ");
-  while (1)
-    asm("nop");
+  printf(" $dataEx_Error_Handler$ ");
 }

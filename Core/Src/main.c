@@ -115,14 +115,14 @@ int main(void)
      int16_t msglen=0;
      if ((msglen = polling())>0)  //check incoming
      {
-       printf("_message %d bytes\r\n",msglen);
+       printf("\r\n_message %d bytes\r\n",msglen);
        if (process_answer (inBox) == STATUS_OK)
        {
          //displaying
         for (uint16_t i=0; i<msglen; i++)
           printf("0x%X ",*(inBox + i));
         
-        HAL_Delay(300); //immitate delay
+        HAL_Delay(50); //immitate delay
         
         HAL_GPIO_WritePin(ONBOARD_LED_GPIO_Port, ONBOARD_LED_Pin, GPIO_PIN_SET);  //LED error indicate OFF
         
@@ -135,7 +135,7 @@ int main(void)
           printf("CRC wrong\r\n");
           HAL_GPIO_WritePin(ONBOARD_LED_GPIO_Port, ONBOARD_LED_Pin, GPIO_PIN_RESET);  //LED error indicate ON
         }
-     } //polling()>0 
+     } //polling()>0
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
