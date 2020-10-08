@@ -7,6 +7,7 @@ The communication protocol is specified: see structures: transmitt_Buf_t and rec
 Hardware: STM32F103C8 board,    
 Debugger: ST-Link with SWO connect or J-Link,  
 IDE: IAR EWARM 8.50,  
+Drivers: STM32F1xx HAL Drivers v1.1.6  
 UART terminal: https://www.eltima.com/products/serial-port-terminal/
 ## Transmitting:
 The transfer is initiated and performed with DMA.
@@ -29,5 +30,4 @@ Hardware errors are ignored. If there was a failure, it will be eliminated durin
 Logging is implemented through SWO. You do not need to add code if use IAR EWARM.
 If logging is not required remove SWO_PRINTF in preprocessor macros.
 A $ tags $ mean information messages from interrupts. It print from interrupt, because you have a little mix. But it's not important
-
 PIN 13 LED displays wrong received packet (CRC not OK)
