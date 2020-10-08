@@ -22,7 +22,6 @@ The second packet can be receiving. At the end of reception the second packet, i
 If the first packet has not yet been read out, state machine is suspend and new data is no longer received.
 As soon as the user reads the first packet from the internal buffer, the second packet going from the working buffer to the internal buffer. And new bytes receiving will be permit again.
 CRC control performs at the stage of dropping from the internal buffer to the user one (see process_answer)
-***
 ## Exception Handling:
 A sudden stop of the IDLE while the packet is not yet collected always means ignoring the uncollected and starting to listen to a new packet.
 Hardware errors are ignored. If there was a failure, it will be eliminated during the CRC control stage.
